@@ -1,0 +1,29 @@
+Type: Package
+Package: SparsePVCM
+Title: Sparse Principal Varying Coefficient Model (SPVCM)
+Version: 0.1.0
+Author: Joonho Gong
+Maintainer: Joonho Gong <jgong9@ncsu.edu>
+Description: This package provides functions for fitting a low-rank and sparse principal varying coefficient model.
+License: GPL(>=2)
+VignetteBuilder: 
+    knitr
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.2.3
+Imports: 
+    face,
+    glmnet,
+    MASS,
+    parallel,
+    splines
+Depends: 
+    R (>= 3.6)
+Collate: 
+    'bic_SparsePVCM.R'
+    'dys_SparsePVCM.R'
+    'sim_data.R'
+    'SparsePVCM.R'
+    'predict_SparsePVCM.R'
+    'VCM.R'
+    'utils.R'

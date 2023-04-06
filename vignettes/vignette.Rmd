@@ -1,0 +1,188 @@
+---
+title: "SparsePVCM"
+author: "Joonho Gong, Luo Xiao, Arnab Maity"
+output: rmarkdown::html_document 
+vignette: >
+  %\VignetteIndexEntry{my-vignette}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(SparsePVCM)
+```
+## Functions
+
+### SparsePVCM
+`SparsePVCM` is a function to fit a sparse varying coefficient model for a small number of principal functions and variable selection. 
+
+#### Usage
+```{R, eval =F}
+### 1. Prepare the yeat real data
+data(yeast)
+
+## Time series response variable
+y_sample <- c( t(yeast$y) )
+n <- length(y_sample)
+
+## Standardize and expand predictor matrix for each response value
+X_std <- scale( yeast$x )
+n_gene <- dim(X_std)[1]
+p <- dim(X_std)[2]
+
+X_sample <- matrix(NA, n, p )
+for(i in 1:n_gene){
+  temp <-  matrix( rep(X_std[i,], 18), 18, p, byrow = T)
+  X_sample[ ( 1 + 18 * (i-1)):(18 * i), ] <- temp
+}
+X_sample <- cbind( rep(1, n), X_sample)
+colnames(X_sample) <- c("intercept", colnames(yeast$x))
+
+## 18 equally spaced time points (0 - 119 minutes)
+U_sample <- rep(seq(0,119,length.out= 18), n_gene )
+
+
+### 2. Fit SPVCM
+start.time <- Sys.time()
+SparsePVCM_fit <-  SparsePVCM(y_sample, X_sample, U_sample,num_tun_1 = 20, num_tun_2 = 20)
+end.time <- Sys.time()
+end.time - start.time
+
+start.time <- Sys.time()
+SparsePVCM_fit <-  SparsePVCM(y_sample, X_sample, U_sample, num_tun_1 = 20, num_tun_2 = 20)
+end.time <- Sys.time()
+end.time - start.time
+
+cat(length(SparsePVCM_fit$X_selected), " predictors are selected with rank ", SparsePVCM_fit$rank,"\n")
+print(SparsePVCM_fit$X_selected)
+
+### 3. Table 3 in-sample result
+# location of the 21 experimentally confirmed TFs with respect to the columns of yeast$x
+locat_true <- c(T, T, F, F, F, F, F, F, T, F, T, F, F, F, F, F, F, F,F, F,T, T, F, F, F, F, T, T, T, F, F,
+                F, F, F, F, F, F, F, F, F, F ,F, F, F, F, T, F, F, F, F, T, T, T, F, F, F, F, F, F, F, T,
+                F, F, F, F, F, F, F, F, T, F, F,
+                F, F, F, F, F, F, F, F, F, F, F, T, F, F, F, T, T, F, F, F, T, T, T, F, F, F, F ,F, F, F,F, F, F,F)
+
+Acc_pvcm <- sum( SparsePVCM_fit$nonzero_index[-1] == locat_true ) /106 # Except intercept
+MSE_pvcm <- sum(( y_sample - SparsePVCM_fit$y_fitted)^2) / n
+Rsqrd_pvcm <- 1- sum(( y_sample - SparsePVCM_fit$y_fitted)^2) / sum(( y_sample - mean(y_sample)  )^2)
+
+TP <- sum(SparsePVCM_fit$nonzero_index[-1] * locat_true) 
+FN <- sum( (!(SparsePVCM_fit$nonzero_index[-1])) * locat_true ) 
+TN <- sum( (!(SparsePVCM_fit$nonzero_index[-1])) * (!(locat_true)) )
+FP <- sum( SparsePVCM_fit$nonzero_index[-1] * (!(locat_true)) ) 
+
+TPR <- TP/ ( TP + FN )
+FPR <- FP / ( FP + TN )
+print(c(TP, FN, FP, TN))
+print(c(Rsqrd_pvcm, MSE_pvcm, Acc_pvcm, TPR, FPR))
+```
+
+
+#### Argument
+
+**y_sample:** The vector of a response variable.
+
+**X_sample:** The design  matrix of predictors.
+
+**U_sample:** The vector of an index variable.
+
+**num_core** The number of cores for parallel computing. If it is not given, the total number of cores minus 1 will be used.
+
+**K:** The number of cubic B-spline basis functions. Default is 10.
+
+**num_tau_1:** The number of nonzero tuning parameter candidates for nuclear norm. Default is 10.
+
+**num_tau_2:** The number of nonzero tuning parameter candidates for group lasso. Default is 10.
+
+**max_iter:** The maximum number of iterations in DYS. Default is 100.
+
+**tol:** Tolerance value used as a stopping criterion. Default is 1e-5.
+
+
+#### Value
+**Theta:**  The estimated parameter matrix \(\hat{\Theta}_{2}\).
+
+**rank:**  The estimated rank of \(\hat{\Theta}_{2}\). 
+
+**X_selected:**  The names of predictors whose have nonzero coefficient functions. 
+
+**nonzero_index:** The logical vector to indicate the predictors with nonzero coefficient functions.
+
+**U:**  The left singular vectors of \(\hat{\Theta}_{2}=UDV^{T}\).
+
+**D:**  The diagonal matrix of singular values of \(\hat{\Theta}_{2}=UDV^{T}\).
+
+**V:**  The right singular vectors of \(\hat{\Theta}_{2}=UDV^{T}\).
+
+
+### predict_SparsePVCM
+`predict_SparsePVCM` is a function to evaluate the estimated functions at the given values of index variable and to calculate the fitted values of the response if new predictor values are given.
+
+#### Usage
+```{R, eval =F }
+## 4. Coefficient functions
+# Figure 2
+# evaluate estimated beta and gamma functions at u_new
+u_new <- seq(0,119, length.out= 18 )
+# For more smooth function, consider
+# u_new <- seq(0,119, length.out= 50 )
+
+function_pred <- predict_SparsePVCM(fit = SparsePVCM_fit, U_new = u_new, X_new = NULL)
+
+
+par(mfrow=c(4,4))
+for(i in (1:p)[SparsePVCM_fit$nonzero_index & c(T, locat_true)] ){
+  if(i == 1){
+    next ## Ignore the intercept function
+  }
+  plot(
+    u_new,
+    function_pred$beta_mat[i, ],
+    lwd = 2,
+    lty = 4,
+    col = "red",
+    ylim= c(-0.21, 0.37),
+    ylab=expression(hat(beta)[j]), xlab="", main=paste(c("Intercept",colnames(yeast$x))[i]),
+    type="l",
+    xaxt = "n", yaxt = "n",
+    cex=1.2,
+    cex.axis=1.4,
+    cex.lab=1.4
+  )
+  mtext("Minutes", side = 1, line = 2.5, cex = 0.9)
+  abline(h=0, lty=3)
+  
+  # X-axis
+  axis(1, at = seq(0,120, by = 20), cex.axis=1.3)
+
+  # Y-axis
+  axis(2, at = seq(-0.2,0.3,by=0.1), labels = c(-0.2, "", 0, "", 0.2,""), cex.axis=1.3)
+  
+}
+
+
+```
+
+#### Argument
+**fit:** A list that is output of the `SparsePVCM` function.
+
+**U_new:** A numeric vector of index variable values to evaluate estimated functions.
+
+**X_new:** A vector of new predictor values to get fitted values of the response. If not specified with NULL (default), only coefficient functions are evaluated.
+
+#### Value
+**y_new:**  The fitted values for the given index variable and predictors.
+
+**beta_mat:**  The estimated coefficient functions \(\hat{\beta}(u)\) at the given index variable. 
+
+**gamma_mat:**  The estimated principal functions \(\hat{\gamma}(u)\) at the given index variable. 
+
+
